@@ -144,6 +144,25 @@ class SPPBottleneck(nn.Module):
         return x
 
 
+class SPPFBottleneck(nn.Module):
+    """Spatial pyramid pooling - Fast (SPPF) layer for YOLOv5 by Glenn Jocher"""
+
+    def __init__(
+        self, in_channels, out_channels, ksize=5, activation="silu"
+    ):
+        super().__init__()
+        hidden_channels = in_channels // 2
+        self.conv1 = BaseConv(in_channels, hidden_channels, 1, stride=1, act=activation)
+        self.conv2 = BaseConv(hidden_channels * 4, out_channels, 1, stride=1, act=activation)
+        self.m = nn.MaxPool2d(kernel_size=ksize, stride=1, padding=ksize // 2)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        y1 = self.m(x)
+        y2 = self.m(y1)
+        return self.conv2(torch.cat([x, y1, y2, self.m(y2)], dim=1))
+
+
 class CSPLayer(nn.Module):
     """C3 in yolov5, CSP Bottleneck with 3 convolutions"""
 
@@ -190,21 +209,9 @@ class Focus(nn.Module):
 
     def __init__(self, in_channels, out_channels, ksize=1, stride=1, act="silu"):
         super().__init__()
+        self.split = nn.Conv2d(in_channels, in_channels * 4, kernel_size=6, padding=2, stride=2)
         self.conv = BaseConv(in_channels * 4, out_channels, ksize, stride, act=act)
 
     def forward(self, x):
-        # shape of x (b,c,w,h) -> y(b,4c,w/2,h/2)
-        patch_top_left = x[..., ::2, ::2]
-        patch_top_right = x[..., ::2, 1::2]
-        patch_bot_left = x[..., 1::2, ::2]
-        patch_bot_right = x[..., 1::2, 1::2]
-        x = torch.cat(
-            (
-                patch_top_left,
-                patch_bot_left,
-                patch_top_right,
-                patch_bot_right,
-            ),
-            dim=1,
-        )
+        x = self.split(x)
         return self.conv(x)
