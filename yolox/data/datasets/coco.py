@@ -93,7 +93,7 @@ class COCODataset(CacheDataset):
         im_ann = self.coco.loadImgs(id_)[0]
         width = im_ann["width"]
         height = im_ann["height"]
-        anno_ids = self.coco.getAnnIds(imgIds=[int(id_)], iscrowd=False)
+        anno_ids = self.coco.getAnnIds(imgIds=[int(id_)], iscrowd=None)
         annotations = self.coco.loadAnns(anno_ids)
         objs = []
         for obj in annotations:
@@ -101,7 +101,7 @@ class COCODataset(CacheDataset):
             y1 = np.max((0, obj["bbox"][1]))
             x2 = np.min((width, x1 + np.max((0, obj["bbox"][2]))))
             y2 = np.min((height, y1 + np.max((0, obj["bbox"][3]))))
-            if obj["area"] > 0 and x2 >= x1 and y2 >= y1:
+            if x2 >= x1 and y2 >= y1:
                 obj["clean_bbox"] = [x1, y1, x2, y2]
                 objs.append(obj)
 
@@ -143,7 +143,7 @@ class COCODataset(CacheDataset):
     def load_image(self, index):
         file_name = self.annotations[index][3]
 
-        img_file = os.path.join(self.data_dir, self.name, file_name)
+        img_file = os.path.join(self.data_dir, file_name)
 
         img = cv2.imread(img_file)
         assert img is not None, f"file named {img_file} not found"

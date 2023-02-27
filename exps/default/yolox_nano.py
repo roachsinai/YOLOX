@@ -22,6 +22,14 @@ class Exp(MyExp):
         self.enable_mixup = False
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
+        self.num_classes = 1
+        # name of annotation file for training
+        self.train_ann = "instances_hand.json"
+        # name of annotation file for evaluation
+        self.val_ann = "instances_hand_val.json"
+        # name of annotation file for testing
+        self.test_ann = "instances_hand_val.json"
+
     def get_model(self, sublinear=False):
 
         def init_yolo(M):
@@ -31,7 +39,7 @@ class Exp(MyExp):
                     m.momentum = 0.03
         if "model" not in self.__dict__:
             from yolox.models import YOLOX, YOLOPAFPN, YOLOXHead
-            in_channels = [256, 512, 1024]
+            in_channels = [128, 256, 512]
             # NANO model use depthwise = True, which is main difference.
             backbone = YOLOPAFPN(
                 self.depth, self.width, in_channels=in_channels,
