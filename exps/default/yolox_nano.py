@@ -14,17 +14,17 @@ class Exp(MyExp):
         super(Exp, self).__init__()
         self.depth = 0.33
         self.width = 0.25
-        self.input_size = (224, 224)
-        self.random_size = (5, 10)
+        self.input_size = (160, 160)
+        self.random_size = (4, 6)
         self.mosaic_scale = (0.5, 1.5)
-        self.test_size = (224, 224)
+        self.test_size = (160, 160)
         self.mosaic_prob = 0.5
         self.enable_mixup = False
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
         self.num_classes = 1
         # name of annotation file for training
-        self.train_ann = "instances_hand.json"
+        self.train_ann = "instances_hand_train.json"
         # name of annotation file for evaluation
         self.val_ann = "instances_hand_val.json"
         # name of annotation file for testing
