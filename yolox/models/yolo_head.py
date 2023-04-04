@@ -12,6 +12,7 @@ import torch.nn.functional as F
 from yolox.utils import bboxes_iou, meshgrid
 
 from .losses import IOUloss
+from .losses import WingLoss
 from .network_blocks import BaseConv, DWConv
 
 
@@ -105,7 +106,7 @@ class YOLOXHead(nn.Module):
             self.reg_preds.append(
                 nn.Conv2d(
                     in_channels=int(256 * width),
-                    out_channels=4,
+                    out_channels=8,
                     kernel_size=1,
                     stride=1,
                     padding=0,
@@ -125,6 +126,7 @@ class YOLOXHead(nn.Module):
         self.l1_loss = nn.L1Loss(reduction="none")
         self.bcewithlog_loss = nn.BCEWithLogitsLoss(reduction="none")
         self.iou_loss = IOUloss(reduction="none")
+        self.wing_loss = WingLoss()
         self.strides = strides
         self.grids = [torch.zeros(1)] * len(in_channels)
 
@@ -176,10 +178,10 @@ class YOLOXHead(nn.Module):
                     batch_size = reg_output.shape[0]
                     hsize, wsize = reg_output.shape[-2:]
                     reg_output = reg_output.view(
-                        batch_size, 1, 4, hsize, wsize
+                        batch_size, 1, 4 + 4, hsize, wsize
                     )
                     reg_output = reg_output.permute(0, 1, 3, 4, 2).reshape(
-                        batch_size, -1, 4
+                        batch_size, -1, 4 + 4
                     )
                     origin_preds.append(reg_output.clone())
 
@@ -216,7 +218,7 @@ class YOLOXHead(nn.Module):
         grid = self.grids[k]
 
         batch_size = output.shape[0]
-        n_ch = 5 + self.num_classes
+        n_ch = 5 + 4 + self.num_classes
         hsize, wsize = output.shape[-2:]
         if grid.shape[2:4] != output.shape[2:4]:
             yv, xv = meshgrid([torch.arange(hsize), torch.arange(wsize)])
@@ -264,8 +266,9 @@ class YOLOXHead(nn.Module):
         dtype,
     ):
         bbox_preds = outputs[:, :, :4]  # [batch, n_anchors_all, 4]
-        obj_preds = outputs[:, :, 4:5]  # [batch, n_anchors_all, 1]
-        cls_preds = outputs[:, :, 5:]  # [batch, n_anchors_all, n_cls]
+        keypoints_preds = outputs[:, :, 4:8]  # [batch, n_anchors_all, 4]
+        obj_preds = outputs[:, :, 8:9]  # [batch, n_anchors_all, 1]
+        cls_preds = outputs[:, :, 9:]  # [batch, n_anchors_all, n_cls]
 
         # calculate targets
         nlabel = (labels.sum(dim=2) > 0).sum(dim=1)  # number of objects
@@ -279,6 +282,7 @@ class YOLOXHead(nn.Module):
 
         cls_targets = []
         reg_targets = []
+        keypoint_targets = []
         l1_targets = []
         obj_targets = []
         fg_masks = []
@@ -291,12 +295,14 @@ class YOLOXHead(nn.Module):
             num_gts += num_gt
             if num_gt == 0:
                 cls_target = outputs.new_zeros((0, self.num_classes))
+                keypoint_target = outputs.new_zeros((0, 4))
                 reg_target = outputs.new_zeros((0, 4))
                 l1_target = outputs.new_zeros((0, 4))
                 obj_target = outputs.new_zeros((total_num_anchors, 1))
                 fg_mask = outputs.new_zeros(total_num_anchors).bool()
             else:
                 gt_bboxes_per_image = labels[batch_idx, :num_gt, 1:5]
+                gt_keypoints_per_image = labels[batch_idx, :num_gt, 5:9]
                 gt_classes = labels[batch_idx, :num_gt, 0]
                 bboxes_preds_per_image = bbox_preds[batch_idx]
 
@@ -358,6 +364,7 @@ class YOLOXHead(nn.Module):
                 ) * pred_ious_this_matching.unsqueeze(-1)
                 obj_target = fg_mask.unsqueeze(-1)
                 reg_target = gt_bboxes_per_image[matched_gt_inds]
+                keypoint_target = gt_keypoints_per_image[matched_gt_inds]
                 if self.use_l1:
                     l1_target = self.get_l1_target(
                         outputs.new_zeros((num_fg_img, 4)),
@@ -369,6 +376,7 @@ class YOLOXHead(nn.Module):
 
             cls_targets.append(cls_target)
             reg_targets.append(reg_target)
+            keypoint_targets.append(keypoint_target)
             obj_targets.append(obj_target.to(dtype))
             fg_masks.append(fg_mask)
             if self.use_l1:
@@ -376,6 +384,7 @@ class YOLOXHead(nn.Module):
 
         cls_targets = torch.cat(cls_targets, 0)
         reg_targets = torch.cat(reg_targets, 0)
+        keypoint_targets = torch.cat(keypoint_targets, 0)
         obj_targets = torch.cat(obj_targets, 0)
         fg_masks = torch.cat(fg_masks, 0)
         if self.use_l1:
@@ -384,6 +393,9 @@ class YOLOXHead(nn.Module):
         num_fg = max(num_fg, 1)
         loss_iou = (
             self.iou_loss(bbox_preds.view(-1, 4)[fg_masks], reg_targets)
+        ).sum() / num_fg
+        loss_keypoint = (
+            self.wing_loss(keypoints_preds.view(-1, 4)[fg_masks].view(-1, 2), keypoint_targets.view(-1, 2))
         ).sum() / num_fg
         loss_obj = (
             self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets)
@@ -406,6 +418,7 @@ class YOLOXHead(nn.Module):
         return (
             loss,
             reg_weight * loss_iou,
+            loss_keypoint,
             loss_obj,
             loss_cls,
             loss_l1,

@@ -91,6 +91,13 @@ def apply_affine_to_bboxes(targets, target_size, M, scale):
     corner_points = corner_points @ M.T  # apply affine transform
     corner_points = corner_points.reshape(num_gts, 8)
 
+    key_points = np.ones((2 * num_gts, 3))
+    key_points[:, :2] = targets[:, 4:-1].reshape(
+        2 * num_gts, 2
+    )  # x1y1, x2y2
+    key_points = key_points @ M.T  # apply affine transform
+    key_points = key_points.reshape(num_gts, 4)
+
     # create new boxes
     corner_xs = corner_points[:, 0::2]
     corner_ys = corner_points[:, 1::2]
@@ -106,7 +113,25 @@ def apply_affine_to_bboxes(targets, target_size, M, scale):
     new_bboxes[:, 0::2] = new_bboxes[:, 0::2].clip(0, twidth)
     new_bboxes[:, 1::2] = new_bboxes[:, 1::2].clip(0, theight)
 
-    targets[:, :4] = new_bboxes
+    # keypoints not in boxes
+    # first point
+    fisrt_point = np.expand_dims(key_points[:, :2], axis=0)
+    second_point = np.expand_dims(key_points[:, 2:], axis=0)
+    new_key_points = np.concatenate((fisrt_point, second_point), axis=0)
+
+    smaller_than_topleft_mask = new_key_points < new_bboxes[:, :2]
+    bigger_than_downright_mask = new_key_points > new_bboxes[:, 2:]
+    mask = smaller_than_topleft_mask | bigger_than_downright_mask
+    for i in range(len(mask)):
+        mask_or = np.expand_dims(mask[i][:, 0], axis=1) | np.expand_dims(mask[i][:, 1], axis=1)
+        mask[i] = np.tile(mask_or, 2)
+
+    mask = np.concatenate((mask[0], mask[1]), axis=1)
+    key_points[mask] = -1.
+
+    new_bboxes = np.concatenate((new_bboxes, key_points), axis=1)
+
+    targets[:, :8] = new_bboxes
 
     return targets
 
@@ -135,7 +160,11 @@ def _mirror(image, boxes, prob=0.5):
     _, width, _ = image.shape
     if random.random() < prob:
         image = image[:, ::-1]
-        boxes[:, 0::2] = width - boxes[:, 2::-2]
+        mask = boxes < 0
+
+        boxes[:, 0::2] = width - boxes[:, 0::2]
+        boxes[:, [0, 2]] = boxes[:, [2, 0]]
+        boxes[mask]  = -1.
     return image, boxes
 
 
@@ -165,18 +194,18 @@ class TrainTransform:
         self.hsv_prob = hsv_prob
 
     def __call__(self, image, targets, input_dim):
-        boxes = targets[:, :4].copy()
-        labels = targets[:, 4].copy()
+        boxes = targets[:, :8].copy()
+        labels = targets[:, 8].copy()
         if len(boxes) == 0:
-            targets = np.zeros((self.max_labels, 5), dtype=np.float32)
+            targets = np.zeros((self.max_labels, 9), dtype=np.float32)
             image, r_o = preproc(image, input_dim)
             return image, targets
 
         image_o = image.copy()
         targets_o = targets.copy()
         height_o, width_o, _ = image_o.shape
-        boxes_o = targets_o[:, :4]
-        labels_o = targets_o[:, 4]
+        boxes_o = targets_o[:, :8]
+        labels_o = targets_o[:, 8]
         # bbox_o: [xyxy] to [c_x,c_y,w,h]
         boxes_o = xyxy2cxcywh(boxes_o)
 
@@ -194,15 +223,14 @@ class TrainTransform:
         labels_t = labels[mask_b]
 
         if len(boxes_t) == 0:
-            image_t, r_o = preproc(image_o, input_dim)
-            boxes_o *= r_o
-            boxes_t = boxes_o
-            labels_t = labels_o
+            targets = np.zeros((self.max_labels, 9), dtype=np.float32)
+            image, r_o = preproc(image, input_dim)
+            return image, targets
 
         labels_t = np.expand_dims(labels_t, 1)
 
         targets_t = np.hstack((labels_t, boxes_t))
-        padded_labels = np.zeros((self.max_labels, 5))
+        padded_labels = np.zeros((self.max_labels, 9))
         padded_labels[range(len(targets_t))[: self.max_labels]] = targets_t[
             : self.max_labels
         ]

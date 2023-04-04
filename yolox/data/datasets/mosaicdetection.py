@@ -79,6 +79,7 @@ class MosaicDetection(Dataset):
     def __getitem__(self, idx):
         if self.enable_mosaic and random.random() < self.mosaic_prob:
             mosaic_labels = []
+            negative_keypoints = []
             input_dim = self._dataset.input_dim
             input_h, input_w = input_dim[0], input_dim[1]
 
@@ -88,6 +89,9 @@ class MosaicDetection(Dataset):
 
             # 3 additional image indices
             indices = [idx] + [random.randint(0, len(self._dataset) - 1) for _ in range(3)]
+            # for v in indices:
+            #     if v == 94:
+            #         print(123)
 
             for i_mosaic, index in enumerate(indices):
                 img, _labels, _, img_id = self._dataset.pull_item(index)
@@ -110,20 +114,22 @@ class MosaicDetection(Dataset):
                 padw, padh = l_x1 - s_x1, l_y1 - s_y1
 
                 labels = _labels.copy()
+                negative_keypoints.append(labels[:, 4:-1] < 0)
                 # Normalized xywh to pixel xyxy format
                 if _labels.size > 0:
-                    labels[:, 0] = scale * _labels[:, 0] + padw
-                    labels[:, 1] = scale * _labels[:, 1] + padh
-                    labels[:, 2] = scale * _labels[:, 2] + padw
-                    labels[:, 3] = scale * _labels[:, 3] + padh
+                    labels[:, :8:2] = scale * _labels[:, :8:2] + padw
+                    labels[:, 1::2] = scale * _labels[:, 1::2] + padh
                 mosaic_labels.append(labels)
 
             if len(mosaic_labels):
                 mosaic_labels = np.concatenate(mosaic_labels, 0)
-                np.clip(mosaic_labels[:, 0], 0, 2 * input_w, out=mosaic_labels[:, 0])
-                np.clip(mosaic_labels[:, 1], 0, 2 * input_h, out=mosaic_labels[:, 1])
-                np.clip(mosaic_labels[:, 2], 0, 2 * input_w, out=mosaic_labels[:, 2])
-                np.clip(mosaic_labels[:, 3], 0, 2 * input_h, out=mosaic_labels[:, 3])
+                negative_keypoints = np.concatenate(negative_keypoints, 0)
+
+                for i in range(8):
+                    np.clip(mosaic_labels[:, i],
+                            0,
+                            2 * (input_w if i % 2 == 0 else input_h),
+                            out=mosaic_labels[:, i])
 
             mosaic_img, mosaic_labels = random_affine(
                 mosaic_img,
@@ -134,6 +140,8 @@ class MosaicDetection(Dataset):
                 scales=self.scale,
                 shear=self.shear,
             )
+
+            mosaic_labels[:, 4:-1][negative_keypoints] = -1.
 
             # -----------------------------------------------------------------
             # CopyPaste: https://arxiv.org/abs/2012.07177

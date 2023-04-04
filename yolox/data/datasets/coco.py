@@ -103,18 +103,19 @@ class COCODataset(CacheDataset):
             y2 = np.min((height, y1 + np.max((0, obj["bbox"][3]))))
             if x2 >= x1 and y2 >= y1:
                 obj["clean_bbox"] = [x1, y1, x2, y2]
+                obj["clean_keypoints"] = [val for ix, val in enumerate(obj["keypoints"]) if ix % 3 != 2]
                 objs.append(obj)
 
         num_objs = len(objs)
 
-        res = np.zeros((num_objs, 5))
+        res = np.zeros((num_objs, 9))
         for ix, obj in enumerate(objs):
             cls = self.class_ids.index(obj["category_id"])
-            res[ix, 0:4] = obj["clean_bbox"]
-            res[ix, 4] = cls
+            res[ix, 0:8] = obj["clean_bbox"] + obj["clean_keypoints"]
+            res[ix, 8] = cls
 
         r = min(self.img_size[0] / height, self.img_size[1] / width)
-        res[:, :4] *= r
+        res[:, :8] *= r
 
         img_info = (height, width)
         resized_info = (int(height * r), int(width * r))
