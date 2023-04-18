@@ -396,7 +396,7 @@ class YOLOXHead(nn.Module):
         ).sum() / num_fg
         loss_keypoint = (
             self.wing_loss(keypoints_preds.view(-1, 4)[fg_masks].view(-1, 2), keypoint_targets.view(-1, 2))
-        ).sum() / num_fg
+        ).sum()
         loss_obj = (
             self.bcewithlog_loss(obj_preds.view(-1, 1), obj_targets)
         ).sum() / num_fg
@@ -413,7 +413,7 @@ class YOLOXHead(nn.Module):
             loss_l1 = 0.0
 
         reg_weight = 5.0
-        loss = reg_weight * loss_iou + loss_obj + loss_cls + loss_l1
+        loss = reg_weight * loss_iou + loss_keypoint + loss_obj + loss_cls + loss_l1
 
         return (
             loss,

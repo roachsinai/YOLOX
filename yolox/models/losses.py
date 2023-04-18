@@ -73,6 +73,7 @@ class WingLoss(nn.Module):
         C = self.omega - self.omega * math.log(1 + self.omega / self.epsilon)
         loss2 = delta_y2 - C
         return (loss1.sum() + loss2.sum()) / (sum(mask) * 2.0)
+        # return (loss1.sum() + loss2.sum()) / 2
 
 
 if __name__ == "__main__":
