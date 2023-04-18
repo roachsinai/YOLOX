@@ -20,6 +20,10 @@ def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
         y0 = int(box[1])
         x1 = int(box[2])
         y1 = int(box[3])
+        p_x0 = int(box[4])
+        p_y0 = int(box[5])
+        p_x1 = int(box[6])
+        p_y1 = int(box[7])
 
         color = (_COLORS[cls_id] * 255).astype(np.uint8).tolist()
         text = '{}:{:.1f}%'.format(class_names[cls_id], score * 100)
@@ -28,6 +32,8 @@ def vis(img, boxes, scores, cls_ids, conf=0.5, class_names=None):
 
         txt_size = cv2.getTextSize(text, font, 0.4, 1)[0]
         cv2.rectangle(img, (x0, y0), (x1, y1), color, 2)
+        cv2.circle(img, (p_x0,p_y0), radius=10, color=(0, 0, 255), thickness=3)
+        cv2.circle(img, (p_x1,p_y1), radius=10, color=(0, 0, 255), thickness=3)
 
         txt_bk_color = (_COLORS[cls_id] * 255 * 0.7).astype(np.uint8).tolist()
         cv2.rectangle(
