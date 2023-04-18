@@ -23,12 +23,16 @@ class Exp(MyExp):
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
         self.num_classes = 1
+
+        ann_size = "_small"
+        # ann_size = ""
+
         # name of annotation file for training
-        self.train_ann = "instances_hand_train.json"
+        self.train_ann = f"instances_hand_train{ann_size}.json"
         # name of annotation file for evaluation
-        self.val_ann = "instances_hand_val.json"
+        self.val_ann = f"instances_hand_val{ann_size}.json"
         # name of annotation file for testing
-        self.test_ann = "instances_hand_val.json"
+        self.test_ann = f"instances_hand_val{ann_size}.json"
 
     def get_model(self, sublinear=False):
 
